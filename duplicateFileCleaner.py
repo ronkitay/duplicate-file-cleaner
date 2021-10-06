@@ -60,9 +60,10 @@ class ArgsValidator(object):
 
 
 class DuplicateScanner(object):
-    def __init__(self, root_dir, progress_indicator):
+    def __init__(self, root_dir, progress_indicator, ignored_dirs):
         self.root_dir = root_dir
         self.progress_indicator = progress_indicator
+        self.ignored_dirs = ignored_dirs
         self.md5_sums = {}
 
     def scan(self):
@@ -70,8 +71,12 @@ class DuplicateScanner(object):
         print (BOLD_YELLOW + '')
         counter = 0
         for dir_path, dir_names, file_names in os.walk(self.root_dir, followlinks=True):
+
+            if self.is_ignored_path(dir_path):
+                continue
+
             for file_name in file_names:
-                if file_name == '.DS_Store':
+                if file_name == '.DS_Store' or file_name.endswith('.BUP') or file_name.endswith('.IFO') or file_name.endswith('.VOB'):
                     continue
                 md5 = self.md5_file(dir_path + '/' + file_name)
                 files_with_current_md5 = []
@@ -118,6 +123,13 @@ class DuplicateScanner(object):
     def save_results(self):
         json.dump(self.md5_sums, open('{}/{}'.format(self.root_dir, MD5_SUMS_FILE), 'w'), indent=2)
 
+    def is_ignored_path(self, path):
+        if self.ignored_dirs:
+            for ignored_dir in self.ignored_dirs:
+                if ignored_dir in path:
+                    return True
+        return False
+
 
 class DuplicateCleaner(object):
     def __init__(self, cleanse_paths, demo, report):
@@ -144,8 +156,8 @@ class DuplicateCleaner(object):
         if len(files_to_keep) > 0 and len(files_to_cleanse) > 0:
             self.files_to_delete.extend(files_to_cleanse)
             print ('-' * 100)
-            print ('{} => files to keep => {}'.format(md5, files_to_keep))
-            print ('{} => files to cleanse => {}'.format(md5, files_to_cleanse))
+            print (u'{} => files to keep => {}'.format(md5, files_to_keep))
+            print (u'{} => files to cleanse => {}'.format(md5, files_to_cleanse))
             # for dir, file in files_to_cleanse:
             #     move_to_temp(dir, file)
 
@@ -156,13 +168,13 @@ class DuplicateCleaner(object):
         return False
 
     def delete_file(self, dir_path, file_name):
-        new_dir = BASE_DIR + '/' + dir_path.replace('/', '_')
+        new_dir = BASE_DIR + '/' + dir_path.replace('/', '_').replace(' ', '_')
         source = u'/'.join((dir_path, file_name))
         target = u'/'.join((new_dir, file_name))
         print (u'{} => {}'.format(source, target))
         if not self.demo:
             if not os.path.exists(new_dir):
-                os.mkdir(new_dir)
+                os.makedirs(new_dir)
             os.rename(source, target)
 
 if __name__ == '__main__':
@@ -170,6 +182,7 @@ if __name__ == '__main__':
     parser.add_argument('-a', '--action', choices=['find', 'clean', 'both'], help='Which action to perform')
     parser.add_argument('-r', '--root-dir', help='Root directory to scan')
     parser.add_argument('-c', '--cleanse-paths', nargs='+', required=False, help='The paths to "cleanse" if they contain duplicates from other paths')
+    parser.add_argument('-i', '--ignored-dirs', nargs='+', required=False, help='The directories to ignore while finding duplicates')
     parser.add_argument('--progress-indicator', type=int, default=100, help='The number of files handled for which progress is displayed')
     parser.add_argument('--demo', dest='demo', action='store_true', help='For actions clean and both - does not delete files, only shows what would have been deleted')
     parser.add_argument('--no-report', dest='report', action='store_false', help='For actions find and both - prevents the report from being displayed')
@@ -180,7 +193,7 @@ if __name__ == '__main__':
 
     ArgsValidator(argz).validate()
 
-    duplicateScanner = DuplicateScanner(argz.root_dir, argz.progress_indicator)
+    duplicateScanner = DuplicateScanner(argz.root_dir, argz.progress_indicator, argz.ignored_dirs)
     duplicateCleaner = DuplicateCleaner(argz.cleanse_paths, argz.demo, argz.report)
 
     if argz.action in ['find', 'both']:
